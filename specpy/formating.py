@@ -6,6 +6,7 @@ import sounddevice as sd
 from pydub import AudioSegment
 from PIL import Image
 import time
+from IPython import display
 
 
 plt.rcParams['figure.figsize'] = [12, 8]
@@ -17,7 +18,7 @@ def getMag(inputArray):
         inputArray = np.array([inputArray])
 
     # creates an empty list with the same shape as the input
-    magnitude = np.empty(inputArray.shape)
+    magnitude = np.emnp.pipty(inputArray.shape)
     # interates through the input list converting to a real magnitude
     for i in range(inputArray.size):
         magnitude[i] = (np.sqrt(inputArray[i].real ** 2 + inputArray[i].imag ** 2)) / len(inputArray)
@@ -103,22 +104,29 @@ def split(arr, splitCount, threshRange=500, closeThresh=1000, release=1000):
     level = 0
     starts = []
     ends = []
+    maxes = []
+    currentMax = 0
     out = []
     started = False
     level = 0
     for i in range(len(arr)):
         if abs(arr[i]) > closeThresh+threshRange:
+            currentMax = max(arr[i], currentMax)
             level = abs(arr[i])
             if not started:
                 started = True
                 starts.append(i)
+
         else:
             level -= threshRange/release
+
         if level < closeThresh or i == len(arr)-1:
             arr[i] = 0
             if started:
                 started = False
                 ends.append(i)
+                maxes.append(currentMax)
+                currentMax = 0
 
     if splitCount != len(starts) or len(starts) != len(ends):
         print('oopsy woopsy')
@@ -134,22 +142,26 @@ def split(arr, splitCount, threshRange=500, closeThresh=1000, release=1000):
     return out
 
 
-def zeroPad(arr, addedLength, aliment='left'):
-    if aliment == 'right':
-        out = np.zeros(int(len(arr)+addedLength))
-        for i in range(len(arr)):
-            out[-i-1] = arr[-i-1]
+def zeroPad(arr, addedLength, aliment='left', negAddedLengthReturnLength=12000):
+    if addedLength >= 0:
+        if aliment == 'right':
+            out = np.zeros(int(len(arr)+addedLength))
+            for i in range(len(arr)):
+                out[-i-1] = arr[-i-1]
 
-    elif aliment == 'left':
-        out = np.zeros(int(len(arr)+addedLength))
-        for i in range(len(arr)):
+        elif aliment == 'left':
+            out = np.zeros(int(len(arr)+addedLength))
+            for i in range(len(arr)):
+                out[i] = arr[i]
+
+        elif aliment == 'center':
+            out = zeroPad(arr, addedLength/2, aliment='right')
+            for i in range(int(addedLength/2)):
+                out = np.append(out, 0)
+    else:
+        out = np.zeros(negAddedLengthReturnLength)
+        for i in range(len(out)):
             out[i] = arr[i]
-
-    elif aliment == 'center':
-        out = zeroPad(arr, addedLength/2, aliment='right')
-        for i in range(int(addedLength/2)):
-            out = np.append(out, 0)
-
     return out
 
 
@@ -169,26 +181,35 @@ def logForSpectrogram(arr, base):
     return arr
 
 
-word = 'up'
-inPath = '/home/jonatank/Documents/inter/data/mini_speech_commands/' + word
-outPath = '/home/jonatank/Documents/inter/spec_data/' + word
+dirList = os.listdir('/home/jonatank/Documents/inter/data/mini_speech_commands/')
+# os.mkdir('/home/jonatank/Documents/inter/spec_data3/')
+for folder, word in enumerate(dirList):
+    # os.mkdir(f'/home/jonatank/Documents/inter/spec_data3/{word}/')
+    inPath = '/home/jonatank/Documents/inter/data/mini_speech_commands/' + 'down'
+    outPath = '/home/jonatank/Documents/inter/spec_data3/' + word
 
-fileList = os.listdir(inPath)
+    fileList = os.listdir(inPath)
 
+    for i, fname in enumerate(fileList):
+        startTime = time.time()
+        sampleRate, wav = wavfile.read(inPath+'/'+fname)
+        wav = zeroPad(wav, 16000 - len(wav))
+        # wav = gate(wav, np.amax(wav)//3, np.amax(wav)//5, 1000)
+        # wav = np.array(splitAndZeroPad(wav, 1, np.amax(wav)//5, np.amax(wav)//3, np.amax(wav)//4, 12000)).flatten()
+        spec = getSpectrogram(wav, 256, 6, 128, 220)
 
-for i, fname in enumerate(fileList):
-    sampleRate, wav = wavfile.read(inPath+'/'+fname)
-    wav = gate(wav, np.amax(wav)//3, np.amax(wav)//5, 1000)
-    wav = np.array(splitAndZeroPad(wav, 1, np.amax(wav)//5, np.amax(wav)//3, np.amax(wav)//4, 12000)).flatten()
-    fig, axs = plt.subplots(2)
-    axs[0].plot(wav)
-    spec = logForSpectrogram(getSpectrogram(wav, 300, 6, 50, 200), 2)
-    axs[1].imshow(spec, origin='lower')
-    plt.show()
+        print('Waveform shape:', np.shape(wav))
+        print('Spectrogram shape:', np.shape(spec))
+        fig, axs = plt.subplots(2)
+        axs[0].plot(wav)
+        axs[1].imshow(np.log2(spec), origin='lower', aspect='auto', extent=[0, 16000, 0, 8000])
+        display.display(display.Audio(wav, rate=16000))
+        plt.show()
 
-    # np.save(f'{outPath}/{i}.npy', spec)
-    # endTime = time.time()
-    # print(f'{i}/{len(fileList)}   took: {round(endTime-startTime, 2)} seconds')
+        # np.save(f'{outPath}/{i}.npy', spec)
+        endTime = time.time()
+        print(f'{i}/{len(fileList)-1} in {folder}/{len(dirList)-1}  took: {round(endTime-startTime, 2)} seconds')
+
 
 
 
